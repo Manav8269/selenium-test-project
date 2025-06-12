@@ -1,0 +1,79 @@
+name: Java Selenium Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  selenium-tests:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        java-version: [11, 17]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up JDK ${{ matrix.java-version }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ matrix.java-version }}
+        distribution: 'temurin'
+        
+    - name: Cache Maven dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+        
+    - name: Install Chrome
+      uses: browser-actions/setup-chrome@v1
+      with:
+        chrome-version: stable
+        
+    - name: Install ChromeDriver
+      uses: nanasess/setup-chromedriver@v2
+      
+    - name: Start Xvfb (Virtual Display)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y xvfb
+        export DISPLAY=:99
+        Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+        
+    - name: Run Maven tests
+      run: |
+        export DISPLAY=:99
+        mvn clean test -Dtest.browser=chrome -Dtest.headless=true
+        
+    - name: Generate Test Report
+      uses: dorny/test-reporter@v1
+      if: success() || failure()
+      with:
+        name: Selenium Test Results
+        path: target/surefire-reports/*.xml
+        reporter: java-junit
+        
+    - name: Upload Screenshots on Failure
+      uses: actions/upload-artifact@v3
+      if: failure()
+      with:
+        name: test-screenshots
+        path: screenshots/
+        retention-days: 30
+        
+    - name: Upload Test Reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-reports
+        path: target/surefire-reports/
+        retention-days: 30
